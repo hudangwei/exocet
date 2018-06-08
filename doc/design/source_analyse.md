@@ -295,6 +295,34 @@ Start函数首先读取配置文件,配置结构体如下:
 		self.serveHttpAPI(self.conf.HttpAPIPort, self.stopC)
 	}()
 
+#### 1.2.1 向 etcd 注册自身信息
+
+	- 1 server/server.go : Server :: Start
+
+		if s.dataCoord != nil {
+			err := s.dataCoord.Start()
+			if err != nil {
+				sLog.Fatalf("data coordinator start failed: %v", err)
+			}
+		}
+
+	- 2 cluster/datanode_coord/data_node_coordinator.go : DataCoordinator :: Start
+
+		if dc.register != nil {
+			dc.register.Start()
+			dc.register.Register(&dc.myNode)
+		}
+
+		dc.watchPD()
+
+	- 3 cluster/register_etcd.go : DNEtcdRegister :: Register(*NodeInfo)
+
+		/root/cluster_id/"DataNodes"/"Node-"id 注册 json.Marshal(NodeInfo)
+
+		如果 path 下面原来有value，则读取之，判断原来的 node role。如果原来是 learner 而现在是 data 或者 原来是 data 而现在是 learner，则不得注册，leader 角色不能随意更改。
+
+	- 4
+
 ## 2 client http api
 
 client http api的路径以及响应函数请参见 pdserver/http.go:initHttpHandler，下面逐个分析其中比较重要的功能的处理流程。
@@ -320,7 +348,7 @@ client http api的路径以及响应函数请参见 pdserver/http.go:initHttpHan
 		* 3.1 调用 PDCoordinator :: getCurrentNodes(meta.Tags) 获取当前的 data nodes；
 		* 3.2 检查 namespace 是否存在，已经存在则退出；
 		* 3.3 以当前 wall time 的 UnixNano 值作为meta.MagicCode；
-		* 3.4
+		* 3.4 调用 cluster/register_etcd.go : PDEtcdRegister :: PrepareNamespaceMinGID 生成 meta 的 MinGID；
 		* 3.5 调用 Interface PDRegister :: CreateNamespace(ns string, meta *NamespaceMetaInfo) 创建namespace，从 pdserver/server.go line93 可以看出 PDRegister 其实现是 cluster/register_etcd.go:PDEtcdRegister【详细内容请参见详细分析4】；
 		* 3.6 调用  (pdCoord *PDCoordinator) checkAndUpdateNamespacePartitions(currentNodes map[string]cluster.NodeInfo, namespace string, meta cluster.NamespaceMetaInfo) 把namespace 和 data nodes结合起来。
 
